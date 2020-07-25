@@ -7,40 +7,58 @@ namespace VS_MSBuild
 {
     class Program
     {
-        private static string[] Run(string commandName, params string[] args)
-        {
-            var lines = new List<string>();
-            var command = Command
-                .Create(commandName, args);
-            Console.WriteLine($"{command.CommandName} {command.CommandArgs}");
-            var result = command.OnOutputLine(lines.Add).Execute();
-            if (result.ExitCode != 0)
-            {
-                Environment.Exit(result.ExitCode);
-            }
-            return lines.ToArray();
-        }
-
         static void Main(string[] args)
         {
+            // Find vswhere
+            string programFilesPath = Environment.GetEnvironmentVariable("ProgramFiles(x86)");
+            if (string.IsNullOrEmpty(programFilesPath))
+            {
+                Console.WriteLine($"ProgramFiles(x86) not found.");
+                return;
+            }
             string vswherePath = Path.Combine(
-                Environment.GetEnvironmentVariable("ProgramFiles(x86)"),
+                programFilesPath,
                 "Microsoft Visual Studio",
                 "Installer",
                 "vswhere.exe");
             if (!File.Exists(vswherePath))
             {
                 Console.WriteLine($"vswhere not found: {vswherePath}.");
+                return;
             }
-            var lines = Run(vswherePath,
-                "-latest",
-                "-requires", "Microsoft.Component.MSBuild",
-                "-find", @"MSBuild\**\Bin\MSBuild.exe");
-            if (lines.Length == 0)
+
+            // Find latest MSBuild.
+            var lines = new List<string>();
+            var command = Command.Create(
+                vswherePath,
+                new[]
+                {
+                    "-latest",
+                    "-requires", "Microsoft.Component.MSBuild",
+                    "-find", @"MSBuild\**\Bin\MSBuild.exe"
+                });
+            Console.WriteLine($"{command.CommandName} {command.CommandArgs}");
+            var result = command
+                .OnOutputLine(lines.Add)
+                .OnErrorLine(lines.Add)
+                .Execute();
+            if (result.ExitCode != 0)
+            {
+                Environment.Exit(result.ExitCode);
+            }
+            if (lines.Count == 0)
             {
                 Console.WriteLine("MSBuild not found.");
+                return;
             }
-            Run(lines[0], args);
+
+            // Invoke MSBuild
+            command = Command.Create(lines[0], args);
+            result = command
+                .OnOutputLine(Console.WriteLine)
+                .OnErrorLine(Console.WriteLine)
+                .Execute();
+            Environment.Exit(result.ExitCode);
         }
     }
 }
